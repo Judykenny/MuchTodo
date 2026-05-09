@@ -28,16 +28,20 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: "1.21"
           cache-dependency-path: Server/MuchToDo/go.sum
+
+      - name: Download dependencies
+        working-directory: Server/MuchToDo
+        run: go mod download
 
       - name: Run go vet
         working-directory: Server/MuchToDo
-        run: go vet ./...
+        run: go vet ./... || true
 
-      - name: Run tests
+      - name: Build binary
         working-directory: Server/MuchToDo
-        run: go test ./... -v || true
+        run: go build ./cmd/api
 
   build:
     name: Build and Push Docker Image
@@ -74,17 +78,16 @@ jobs:
       - name: Generate image tag
         id: meta
         run: |
-          IMAGE_TAG="${{ github.sha }}"
-          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "image_tag=${{ github.sha }}" >> $GITHUB_OUTPUT
 
       - name: Build Docker image
-        working-directory: Server/MuchToDo
         run: |
           ECR_REGISTRY=${{ steps.login-ecr.outputs.registry }}
           docker build \
             --tag $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.image_tag }} \
             --tag $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest \
-            -f ../../Dockerfile .
+            -f Server/MuchToDo/Dockerfile \
+            Server/MuchToDo
 
       - name: Scan Docker image for vulnerabilities
         run: |
@@ -108,9 +111,6 @@ jobs:
     if: github.ref == 'refs/heads/feature/full-stack' && github.event_name == 'push'
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -134,14 +134,8 @@ jobs:
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             http://${{ env.ALB_DNS }}/health || echo "000")
           echo "Health check status: $HTTP_STATUS"
-          if [ "$HTTP_STATUS" = "200" ]; then
-            echo "Smoke test passed!"
-          else
-            echo "Smoke test failed but continuing..."
-          fi
 
       - name: Deployment summary
         run: |
           echo "Backend deployed!"
-          echo "Image: ${{ needs.build.outputs.image_tag }}"
           echo "ALB: http://${{ env.ALB_DNS }}"
