@@ -3,8 +3,13 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
+# Install git (needed for some go modules)
+RUN apk add --no-cache git
+
 COPY go.mod go.sum ./
-RUN go mod download
+
+# Tidy and download dependencies
+RUN go mod tidy && go mod download
 
 COPY . .
 
